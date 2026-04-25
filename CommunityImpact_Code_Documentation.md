@@ -2041,11 +2041,10 @@ export class NotificationService implements OnDestroy {
 ## File: src/app/core/services/gemini.service.ts
 
 ```typescript
+// src/app/core/services/gemini.service.ts
 
 import { Injectable } from '@angular/core';
-
 import { environment } from '../../../environments/environment';
-
 import { Incident } from '../../models/incident.model';
 
 const GEMINI_API_KEY = environment.geminiApiKey;
@@ -2053,159 +2052,135 @@ const GEMINI_API_KEY = environment.geminiApiKey;
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 @Injectable({ providedIn: 'root' })
-
 export class GeminiService {
 
   async analyzeIncidentReport(description: string, imageBase64?: string): Promise<any> {
-
     const prompt = `
+You are an emergency response AI assistant. Analyze the following incident report and classify its severity level accurately.
 
-You are an emergency response AI. Analyze this incident report and respond ONLY with valid JSON (no markdown, no explanation):
+SEVERITY CLASSIFICATION RULES (follow strictly):
+- "Critical": Immediate life-threatening danger, mass casualties, structural collapse, active fire with people trapped, severe medical emergency (cardiac arrest, unconsciousness, inability to breathe), large-scale flooding with people stranded, violent crime in progress, or any situation where death is imminent without immediate intervention.
+- "High": Serious injury requiring urgent medical attention, significant property damage, localized flooding, accidents with injured persons, missing person in danger, oxygen/resource shortage in medical facilities, situations worsening rapidly.
+- "Medium": Moderate injuries (non-life-threatening), minor accidents, contained small fires, infrastructure damage without immediate danger to people, situations stable but requiring response within hours.
+- "Low": No injuries, minor property damage, non-urgent community issues, vandalism, nuisance situations, informational reports.
 
+Respond ONLY with valid JSON (no markdown, no explanation, no code fences):
 {
-
-  "summary": "brief 1-sentence title of the incident",
-
-  "severity": "Critical | High | Medium | Low",
-
-  "type": "Flood | Fire | Earthquake | Medical | Violence | Other",
-
-  "recommendations": ["action 1", "action 2"]
-
+  "summary": "brief 1-sentence title describing the incident clearly",
+  "severity": "Critical" or "High" or "Medium" or "Low",
+  "type": "Flood" or "Fire" or "Earthquake" or "Medical" or "Violence" or "Accident" or "Other",
+  "recommendations": ["specific action 1", "specific action 2"]
 }
 
-Incident description: ${description}
-
+Incident report: ${description}
 `;
 
     const parts: any[] = [{ text: prompt }];
 
     if (imageBase64) {
-
       parts.push({
-
         inline_data: {
-
           mime_type: 'image/jpeg',
-
           data: imageBase64
-
         }
-
       });
-
     }
 
     const response = await fetch(GEMINI_URL, {
-
       method: 'POST',
-
       headers: { 'Content-Type': 'application/json' },
-
       body: JSON.stringify({
-
         contents: [{ parts }]
-
       })
-
     });
 
     if (!response.ok) {
-
       const err = await response.text();
-
       throw new Error(`Gemini API error: ${response.status} - ${err}`);
-
     }
 
     const data = await response.json();
-
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
     // Strip markdown code fences if present
-
     const cleaned = rawText.replace(/```json|```/g, '').trim();
 
     try {
+      const parsed = JSON.parse(cleaned);
 
-      return JSON.parse(cleaned);
+      // Normalize severity to ensure it exactly matches the expected union type
+      parsed.severity = this.normalizeSeverity(parsed.severity);
 
+      return parsed;
     } catch {
-
-      // If JSON parse fails, return safe defaults based on description
-
+      // If JSON parse fails, return safe defaults
       return {
-
         summary: description.substring(0, 80),
-
         severity: 'Medium',
-
         type: 'Other',
-
         recommendations: ['Contact local authorities', 'Stay safe']
-
       };
-
     }
+  }
 
+  /**
+   * Normalizes Gemini's severity output to the exact urgency values used by the app.
+   * Handles casing variations and unexpected values gracefully.
+   */
+  private normalizeSeverity(raw: string): 'Critical' | 'High' | 'Medium' | 'Low' {
+    if (!raw || typeof raw !== 'string') return 'Medium';
+
+    const normalized = raw.trim().toLowerCase();
+
+    if (normalized === 'critical') return 'Critical';
+    if (normalized === 'high') return 'High';
+    if (normalized === 'medium') return 'Medium';
+    if (normalized === 'low') return 'Low';
+
+    // Handle edge cases like "Highest" → Critical, "Lowest" → Low
+    if (normalized.includes('critical') || normalized === 'highest') return 'Critical';
+    if (normalized.includes('high')) return 'High';
+    if (normalized.includes('low') || normalized === 'lowest') return 'Low';
+
+    return 'Medium'; // safe fallback
   }
 
   async suggestVolunteer(incident: Incident, volunteers: any[]): Promise<string> {
-
     if (!volunteers.length) return 'volunteer-001';
 
     const prompt = `
-
 Given this emergency incident:
 
 - Title: ${incident.title}
-
 - Urgency: ${incident.urgency}
-
 - Type: ${incident.type}
-
 - Location: ${incident.latitude}, ${incident.longitude}
 
 And these available volunteers: ${JSON.stringify(volunteers)}
 
 Respond ONLY with the volunteerId string of the best match. No explanation.
-
 `;
 
     try {
-
       const response = await fetch(GEMINI_URL, {
-
         method: 'POST',
-
         headers: { 'Content-Type': 'application/json' },
-
         body: JSON.stringify({
-
           contents: [{ parts: [{ text: prompt }] }]
-
         })
-
       });
 
       if (!response.ok) throw new Error('Gemini API error');
 
       const data = await response.json();
-
       const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
       return rawText.trim() || 'volunteer-001';
-
     } catch {
-
       return volunteers[0]?.id || 'volunteer-001';
-
     }
-
   }
-
 }
-
 ```
 
 ---
@@ -9853,255 +9828,169 @@ export class NgoMapComponent implements OnInit {
 ## File: src/app/features/ngo/volunteers/ngo-volunteers.component.ts
 
 ```typescript
-
 // src/app/features/ngo/volunteers/ngo-volunteers.component.ts
-
-// Fixes: label overlap, AI distance-based suggestions, mission history display
+//
+// BUG FIX: confirmAssign() was passing this.selectedVol.id (uid) as volunteerId
+// to assignVolunteer(). The volunteer missions page filters incidents by
+// this.authService.getUserId() which returns the volunteer's email from
+// localStorage. Since vol.id (uid) ≠ email, the filter never matched and the
+// volunteer saw 0 active missions even after being assigned.
+//
+// THE FIX: Pass vol.email as volunteerId (consistent with ngo-dashboard which
+// already does this correctly). The entire app now uses email as the unified
+// volunteerId key everywhere.
 
 import { Component, OnInit } from '@angular/core';
-
 import { VolunteerService, VolunteerProfile } from '../../../core/services/volunteer.service';
-
 import { IncidentService } from '../../../core/services/incident.service';
-
 import { Incident, AssignmentHistory } from '../../../models/incident.model';
-
 import { MatSnackBar } from '@angular/material/snack-bar';
 
 interface VolunteerWithDistance extends VolunteerProfile {
-
   distanceKm?: number;
-
   isBestMatch?: boolean;
-
 }
 
 @Component({
-
   selector: 'app-ngo-volunteers',
-
   templateUrl: './ngo-volunteers.component.html',
-
   styleUrls: ['./ngo-volunteers.component.scss']
-
 })
-
 export class NgoVolunteersComponent implements OnInit {
 
   volunteers: VolunteerProfile[] = [];
-
   pendingIncidents: Incident[] = [];
-
   searchQuery = '';
-
   showAssignModal = false;
-
   selectedVol: VolunteerProfile | null = null;
-
   showHistoryModal = false;
-
   historyVol: VolunteerProfile | null = null;
-
   suggestedIncidents: (Incident & { distanceKm?: number })[] = [];
 
   get availableCount() { return this.volunteers.filter(v => v.status === 'available').length; }
-
   get assignedCount() { return this.volunteers.filter(v => v.status === 'assigned').length; }
 
   get filteredVolunteers(): VolunteerProfile[] {
-
     if (!this.searchQuery.trim()) return this.volunteers;
-
     const q = this.searchQuery.toLowerCase();
-
     return this.volunteers.filter(v =>
-
       v.displayName.toLowerCase().includes(q) || v.email.toLowerCase().includes(q)
-
     );
-
   }
 
   constructor(
-
     private volunteerService: VolunteerService,
-
     private incidentService: IncidentService,
-
     private snackBar: MatSnackBar
-
   ) { }
 
   ngOnInit() {
-
     this.volunteerService.getVolunteers().subscribe(vols => {
-
       this.volunteers = vols;
-
     });
 
     this.incidentService.getActiveIncidents().subscribe(incidents => {
-
       this.pendingIncidents = incidents.filter(i => i.status === 'pending' || i.status === 'active');
-
     });
-
   }
 
   openAssignModal(vol: VolunteerProfile) {
-
     this.selectedVol = vol;
-
     // Sort incidents by distance to this volunteer
-
     this.suggestedIncidents = this._rankIncidentsByDistance(vol);
-
     this.showAssignModal = true;
-
   }
 
   closeModal() {
-
     this.showAssignModal = false;
-
     this.selectedVol = null;
-
     this.suggestedIncidents = [];
-
   }
 
   openHistoryModal(vol: VolunteerProfile) {
-
     this.historyVol = vol;
-
     this.showHistoryModal = true;
-
   }
 
   closeHistoryModal() {
-
     this.showHistoryModal = false;
-
     this.historyVol = null;
-
   }
 
   async confirmAssign(incident: Incident) {
-
     if (!this.selectedVol || !incident.id) return;
 
     try {
-
+      // FIX: use vol.email as volunteerId — this is the unified key that matches
+      // getUserId() (= localStorage userEmail) used by the volunteer missions page.
+      // Previously vol.id (a uid like "vol-1234") was passed here, which NEVER
+      // matched the volunteer's email during filtering → missions never appeared.
       await this.incidentService.assignVolunteer(
-
-        incident.id, this.selectedVol.id, this.selectedVol.displayName
-
+        incident.id, this.selectedVol.email, this.selectedVol.displayName
       );
 
+      // updateVolunteerStatus still uses vol.id (the Firestore doc lookup key)
       await this.volunteerService.updateVolunteerStatus(this.selectedVol.id, 'assigned');
 
       this.snackBar.open(
-
         `✅ ${this.selectedVol.displayName} assigned to "${incident.title}"`,
-
         'OK', { duration: 4000 }
-
       );
 
       this.closeModal();
-
     } catch {
-
       this.snackBar.open('Assignment failed. Try again.', 'OK', { duration: 3000 });
-
     }
-
   }
 
   // ── Sort incidents by proximity to volunteer ─────────────
-
   private _rankIncidentsByDistance(vol: VolunteerProfile): (Incident & { distanceKm?: number })[] {
-
     const { lat: vLat, lng: vLng } = this._parseVolunteerLocation(vol);
 
     return this.pendingIncidents
-
       .map(inc => {
-
         const distanceKm = vLat && vLng
-
           ? IncidentService.haversineKm(vLat, vLng, inc.latitude, inc.longitude)
-
           : undefined;
-
         return { ...inc, distanceKm };
-
       })
-
       .sort((a, b) => {
-
         if (a.distanceKm == null && b.distanceKm == null) return 0;
-
         if (a.distanceKm == null) return 1;
-
         if (b.distanceKm == null) return -1;
-
         return a.distanceKm - b.distanceKm;
-
       });
-
   }
 
   private _parseVolunteerLocation(vol: VolunteerProfile): { lat: number | null, lng: number | null } {
-
     if (!vol.location) return { lat: null, lng: null };
 
     const parts = vol.location.split(',');
-
     if (parts.length === 2) {
-
       const lat = parseFloat(parts[0]);
-
       const lng = parseFloat(parts[1]);
-
       if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
-
     }
 
     const locationMap: Record<string, { lat: number, lng: number }> = {
-
       'chennai south': { lat: 12.9279, lng: 80.1270 },
-
       'anna nagar': { lat: 13.0891, lng: 80.2104 },
-
       'adyar': { lat: 13.0012, lng: 80.2565 },
-
       't nagar': { lat: 13.0418, lng: 80.2341 },
-
       'velachery': { lat: 12.9815, lng: 80.2180 },
-
       'tambaram': { lat: 12.9229, lng: 80.1275 },
-
       'porur': { lat: 13.0333, lng: 80.1574 },
-
       'omr': { lat: 12.8995, lng: 80.2264 },
-
     };
 
     return locationMap[vol.location.trim().toLowerCase()] || { lat: null, lng: null };
-
   }
 
   getUrgencyColor(urgency: string): string {
-
     const map: any = { Critical: '#d32f2f', High: '#f57c00', Medium: '#fbc02d', Low: '#388e3c' };
-
     return map[urgency] || '#388e3c';
-
   }
-
 }
-
 ```
 
 ---
@@ -12754,239 +12643,191 @@ export class NavbarComponent implements OnInit, OnDestroy {
 ## File: src/app/shared/components/report-incident/report-incident.component.ts
 
 ```typescript
+// src/app/shared/components/report-incident/report-incident.component.ts
 
 import { Component } from '@angular/core';
-
 import { GeminiService } from '../../../core/services/gemini.service';
-
 import { IncidentService } from '../../../core/services/incident.service';
-
 import { AuthService } from '../../../core/services/auth.service';
-
 import { MatSnackBar } from '@angular/material/snack-bar';
 
 @Component({
-
   selector: 'app-report-incident',
-
   templateUrl: './report-incident.component.html',
-
   styleUrls: ['./report-incident.component.scss']
-
 })
-
 export class ReportIncidentComponent {
 
   reportText = '';
-
   isAnalyzing = false;
-
   isRecording = false;
-
   imageBase64: string | null = null;
-
   imagePreviewUrl: string | null = null;
-
   currentLat: number = 11.0168;
-
   currentLng: number = 76.9558;
-
   locationLabel: string = 'Fetching location...';
 
   constructor(
-
     private geminiService: GeminiService,
-
     private incidentService: IncidentService,
-
     private authService: AuthService,
-
     private snackBar: MatSnackBar
-
   ) {
-
     this.refreshLocation();
-
   }
 
   refreshLocation() {
-
     this.locationLabel = 'Fetching location...';
-
     if (navigator.geolocation) {
-
       navigator.geolocation.getCurrentPosition(
-
         (pos) => {
-
           this.currentLat = pos.coords.latitude;
-
           this.currentLng = pos.coords.longitude;
-
           this.locationLabel = `${this.currentLat.toFixed(4)}, ${this.currentLng.toFixed(4)}`;
-
         },
-
         () => { this.locationLabel = 'Location unavailable — using default'; }
-
       );
-
     } else {
-
       this.locationLabel = 'Geolocation not supported';
-
     }
-
   }
 
   onFileSelected(event: any) {
-
     const file = event.target.files[0];
-
     if (!file) return;
 
     const reader = new FileReader();
-
     reader.onload = async (e: any) => {
-
       this.imagePreviewUrl = e.target.result;
-
       this.imageBase64 = e.target.result.split(',')[1];
-
       this.isAnalyzing = true;
-
       try {
-
-        const analysis = await this.geminiService.analyzeIncidentReport('Extract and analyze this incident image.', this.imageBase64!);
-
+        const analysis = await this.geminiService.analyzeIncidentReport(
+          'Extract and analyze this incident image.',
+          this.imageBase64!
+        );
         this.reportText = analysis.summary || 'Image analyzed. Please review and add details.';
-
         this.snackBar.open('Image analyzed!', 'OK', { duration: 2500 });
-
       } catch {
-
         this.snackBar.open('OCR failed. Type the details manually.', 'OK', { duration: 3000 });
-
       } finally { this.isAnalyzing = false; }
-
     };
-
     reader.readAsDataURL(file);
-
   }
 
   clearImage() { this.imageBase64 = null; this.imagePreviewUrl = null; }
 
   startVoiceRecording() {
-
     const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-
     if (!SpeechRecognition) {
-
       this.snackBar.open('Voice recognition not supported.', 'OK', { duration: 3000 });
-
       return;
-
     }
-
     const rec = new SpeechRecognition();
-
     rec.lang = 'en-IN';
-
     rec.continuous = false;
-
     rec.interimResults = false;
-
     this.isRecording = true;
-
     rec.onresult = (event: any) => { this.reportText = event.results[0][0].transcript; this.isRecording = false; };
-
     rec.onerror = () => { this.isRecording = false; this.snackBar.open('Voice error. Try again.', 'OK', { duration: 3000 }); };
-
     rec.onend = () => { this.isRecording = false; };
-
     rec.start();
-
     this.snackBar.open('Listening... Speak now.', '', { duration: 3000 });
-
   }
 
   async submitReport() {
-
     if (!this.reportText.trim()) return;
 
     this.isAnalyzing = true;
 
-    // ✅ Use actual logged-in user's email as victimId
-
     const victimId = this.authService.getUserId();
 
     try {
-
-      let analysis: any = { summary: this.reportText, severity: 'Medium', type: 'Other' };
+      // Default fallback — only used if Gemini completely fails
+      let analysis: any = {
+        summary: this.reportText.substring(0, 80),
+        severity: 'Medium',
+        type: 'Other'
+      };
 
       try {
+        const result = await this.geminiService.analyzeIncidentReport(
+          this.reportText,
+          this.imageBase64 || undefined
+        );
 
-        const result = await this.geminiService.analyzeIncidentReport(this.reportText, this.imageBase64 || undefined);
+        // Only adopt Gemini result if it returned a valid, non-empty analysis
+        if (result?.summary && result?.severity) {
+          analysis = result;
+        }
+      } catch (e) {
+        console.warn('Gemini analysis failed, using keyword-based fallback:', e);
+        // Keyword-based fallback priority classification
+        analysis.severity = this.keywordFallbackSeverity(this.reportText);
+      }
 
-        if (result?.summary) analysis = result;
-
-      } catch (e) { console.warn('Gemini failed, using defaults:', e); }
+      // Final safety check: ensure severity is a valid urgency value
+      const validUrgencies = ['Critical', 'High', 'Medium', 'Low'];
+      const urgency = validUrgencies.includes(analysis.severity) ? analysis.severity : 'Medium';
 
       await this.incidentService.createIncident({
-
         title: analysis.summary || this.reportText.substring(0, 60),
-
         description: this.reportText,
-
-        urgency: analysis.severity || 'Medium',
-
+        urgency: urgency as 'Critical' | 'High' | 'Medium' | 'Low',
         type: analysis.type || 'Other',
-
         status: 'pending',
-
         timestamp: new Date().toISOString(),
-
         latitude: this.currentLat,
-
         longitude: this.currentLng,
-
-        victimId  // ✅ actual user id
-
+        victimId
       });
 
-      this.snackBar.open('✅ Report submitted! Help is on the way.', 'OK', {
-
+      this.snackBar.open(`✅ Report submitted! Priority: ${urgency}. Help is on the way.`, 'OK', {
         duration: 5000, panelClass: ['success-snackbar']
-
       });
 
       this.reportText = '';
-
       this.imageBase64 = null;
-
       this.imagePreviewUrl = null;
 
     } catch (error: any) {
-
       console.error('Submission Error:', error);
-
       if (error?.code === 'permission-denied') {
-
         this.snackBar.open('Permission denied. Please log in again.', 'Close', { duration: 5000 });
-
       } else {
-
         this.snackBar.open('Submission failed. Please try again.', 'Close', { duration: 4000 });
-
       }
-
     } finally { this.isAnalyzing = false; }
-
   }
 
-}
+  /**
+   * Keyword-based severity classifier used as a fallback when Gemini API is unavailable.
+   * Scans the report text for emergency keywords to assign a reasonable priority.
+   */
+  private keywordFallbackSeverity(text: string): 'Critical' | 'High' | 'Medium' | 'Low' {
+    const lower = text.toLowerCase();
 
+    const criticalKeywords = [
+      'death', 'died', 'dead', 'unconscious', 'not breathing', 'cardiac arrest',
+      'trapped', 'drowning', 'drowning', 'critical', 'life threatening', 'mass casualty',
+      'explosion', 'collapsed building', 'major flood', 'severe flood'
+    ];
+    const highKeywords = [
+      'accident', 'injured', 'injury', 'bleeding', 'broke', 'broken', 'flood',
+      'fire', 'emergency', 'urgent', 'oxygen', 'hospital', 'ambulance', 'fracture',
+      'hit', 'crash', 'burn', 'electrocuted', 'missing', 'help', 'immediate'
+    ];
+    const lowKeywords = [
+      'minor', 'small', 'little', 'noise', 'nuisance', 'complaint', 'issue', 'request'
+    ];
+
+    if (criticalKeywords.some(k => lower.includes(k))) return 'Critical';
+    if (highKeywords.some(k => lower.includes(k))) return 'High';
+    if (lowKeywords.some(k => lower.includes(k))) return 'Low';
+
+    return 'Medium';
+  }
+}
 ```
 
 ---
