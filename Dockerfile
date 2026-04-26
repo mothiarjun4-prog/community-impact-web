@@ -8,6 +8,7 @@ RUN npm run build --configuration=production
 
 # Step 2: Serve the app using Nginx
 FROM nginx:alpine
-COPY --from=build /app/dist/community-impact-web/browser /usr/share/nginx/html
+# Change the line below: removed "/browser"
+COPY --from=build /app/dist/community-impact-web /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
