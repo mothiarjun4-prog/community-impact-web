@@ -1,0 +1,40 @@
+<div class="rating-dialog">
+  <div class="dialog-header">
+    <div class="dialog-icon">
+      <mat-icon>star_rate</mat-icon>
+    </div>
+    <h2>Rate Your Experience</h2>
+    <p>How was your experience with <strong>{{ data.volunteerName }}</strong>?</p>
+  </div>
+
+  <!-- Star Rating Row -->
+  <div class="stars-row">
+    <button *ngFor="let star of [1,2,3,4,5]"
+      class="star-btn"
+      [class.filled]="star <= selectedRating"
+      (click)="selectedRating = star"
+      type="button">
+      <mat-icon>{{ star <= selectedRating ? 'star' : 'star_border' }}</mat-icon>
+    </button>
+  </div>
+
+  <p class="rating-label" *ngIf="selectedRating > 0">{{ ratingLabel }}</p>
+
+  <!-- Comment field -->
+  <mat-form-field appearance="outline" class="comment-field">
+    <mat-label>Your feedback (optional)</mat-label>
+    <textarea matInput [(ngModel)]="comment" rows="3"
+      placeholder="Describe your experience with the volunteer..."></textarea>
+  </mat-form-field>
+
+  <!-- Actions -->
+  <div class="dialog-actions">
+    <button mat-button (click)="close()" class="cancel-btn">Skip</button>
+    <button mat-raised-button class="btn-primary submit-btn"
+      [disabled]="selectedRating === 0 || isSubmitting"
+      (click)="submitRating()">
+      <mat-spinner *ngIf="isSubmitting" diameter="16" style="display:inline-block;margin-right:6px;"></mat-spinner>
+      {{ isSubmitting ? 'Submitting...' : 'Submit Rating' }}
+    </button>
+  </div>
+</div>

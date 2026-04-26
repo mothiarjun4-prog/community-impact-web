@@ -4,11 +4,11 @@ export const environment = {
   googleMapsApiKey: 'YOUR_GOOGLE_MAPS_API_KEY',
   firebase: {
     apiKey: "YOUR_FIREBASE_API_KEY",
-    authDomain: "YOUR_FIREBASE_AUTH_DOMAIN",
-    projectId: "YOUR_FIREBASE_PROJECT_ID",
-    storageBucket: "YOUR_FIREBASE_STORAGE_BUCKET",
-    messagingSenderId: "YOUR_FIREBASE_MESSAGING_SENDER_ID",
-    appId: "YOUR_FIREBASE_APP_ID",
-    measurementId: "YOUR_FIREBASE_MEASUREMENT_ID"
+    authDomain: "communityimpact-e7d5a.firebaseapp.com",
+    projectId: "communityimpact-e7d5a",
+    storageBucket: "communityimpact-e7d5a.firebasestorage.app",
+    messagingSenderId: "253828608932",
+    appId: "1:253828608932:web:9f8824ed7f328d5217c731",
+    measurementId: "G-J98N9JCTLD"
   }
 };

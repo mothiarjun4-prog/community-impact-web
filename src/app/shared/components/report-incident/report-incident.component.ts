@@ -1,5 +1,3 @@
-// src/app/shared/components/report-incident/report-incident.component.ts
-
 import { Component } from '@angular/core';
 import { GeminiService } from '../../../core/services/gemini.service';
 import { IncidentService } from '../../../core/services/incident.service';
@@ -12,7 +10,6 @@ import { MatSnackBar } from '@angular/material/snack-bar';
   styleUrls: ['./report-incident.component.scss']
 })
 export class ReportIncidentComponent {
-
   reportText = '';
   isAnalyzing = false;
   isRecording = false;
@@ -50,17 +47,13 @@ export class ReportIncidentComponent {
   onFileSelected(event: any) {
     const file = event.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = async (e: any) => {
       this.imagePreviewUrl = e.target.result;
       this.imageBase64 = e.target.result.split(',')[1];
       this.isAnalyzing = true;
       try {
-        const analysis = await this.geminiService.analyzeIncidentReport(
-          'Extract and analyze this incident image.',
-          this.imageBase64!
-        );
+        const analysis = await this.geminiService.analyzeIncidentReport('Extract and analyze this incident image.', this.imageBase64!);
         this.reportText = analysis.summary || 'Image analyzed. Please review and add details.';
         this.snackBar.open('Image analyzed!', 'OK', { duration: 2500 });
       } catch {
@@ -92,55 +85,33 @@ export class ReportIncidentComponent {
 
   async submitReport() {
     if (!this.reportText.trim()) return;
-
     this.isAnalyzing = true;
 
+    // ✅ Use actual logged-in user's email as victimId
     const victimId = this.authService.getUserId();
 
     try {
-      // Default fallback — only used if Gemini completely fails
-      let analysis: any = {
-        summary: this.reportText.substring(0, 80),
-        severity: 'Medium',
-        type: 'Other'
-      };
-
+      let analysis: any = { summary: this.reportText, severity: 'Medium', type: 'Other' };
       try {
-        const result = await this.geminiService.analyzeIncidentReport(
-          this.reportText,
-          this.imageBase64 || undefined
-        );
-
-        // Only adopt Gemini result if it returned a valid, non-empty analysis
-        if (result?.summary && result?.severity) {
-          analysis = result;
-        }
-      } catch (e) {
-        console.warn('Gemini analysis failed, using keyword-based fallback:', e);
-        // Keyword-based fallback priority classification
-        analysis.severity = this.keywordFallbackSeverity(this.reportText);
-      }
-
-      // Final safety check: ensure severity is a valid urgency value
-      const validUrgencies = ['Critical', 'High', 'Medium', 'Low'];
-      const urgency = validUrgencies.includes(analysis.severity) ? analysis.severity : 'Medium';
+        const result = await this.geminiService.analyzeIncidentReport(this.reportText, this.imageBase64 || undefined);
+        if (result?.summary) analysis = result;
+      } catch (e) { console.warn('Gemini failed, using defaults:', e); }
 
       await this.incidentService.createIncident({
         title: analysis.summary || this.reportText.substring(0, 60),
         description: this.reportText,
-        urgency: urgency as 'Critical' | 'High' | 'Medium' | 'Low',
+        urgency: analysis.severity || 'Medium',
         type: analysis.type || 'Other',
         status: 'pending',
         timestamp: new Date().toISOString(),
         latitude: this.currentLat,
         longitude: this.currentLng,
-        victimId
+        victimId  // ✅ actual user id
       });
 
-      this.snackBar.open(`✅ Report submitted! Priority: ${urgency}. Help is on the way.`, 'OK', {
+      this.snackBar.open('✅ Report submitted! Help is on the way.', 'OK', {
         duration: 5000, panelClass: ['success-snackbar']
       });
-
       this.reportText = '';
       this.imageBase64 = null;
       this.imagePreviewUrl = null;
@@ -153,33 +124,5 @@ export class ReportIncidentComponent {
         this.snackBar.open('Submission failed. Please try again.', 'Close', { duration: 4000 });
       }
     } finally { this.isAnalyzing = false; }
-  }
-
-  /**
-   * Keyword-based severity classifier used as a fallback when Gemini API is unavailable.
-   * Scans the report text for emergency keywords to assign a reasonable priority.
-   */
-  private keywordFallbackSeverity(text: string): 'Critical' | 'High' | 'Medium' | 'Low' {
-    const lower = text.toLowerCase();
-
-    const criticalKeywords = [
-      'death', 'died', 'dead', 'unconscious', 'not breathing', 'cardiac arrest',
-      'trapped', 'drowning', 'drowning', 'critical', 'life threatening', 'mass casualty',
-      'explosion', 'collapsed building', 'major flood', 'severe flood'
-    ];
-    const highKeywords = [
-      'accident', 'injured', 'injury', 'bleeding', 'broke', 'broken', 'flood',
-      'fire', 'emergency', 'urgent', 'oxygen', 'hospital', 'ambulance', 'fracture',
-      'hit', 'crash', 'burn', 'electrocuted', 'missing', 'help', 'immediate'
-    ];
-    const lowKeywords = [
-      'minor', 'small', 'little', 'noise', 'nuisance', 'complaint', 'issue', 'request'
-    ];
-
-    if (criticalKeywords.some(k => lower.includes(k))) return 'Critical';
-    if (highKeywords.some(k => lower.includes(k))) return 'High';
-    if (lowKeywords.some(k => lower.includes(k))) return 'Low';
-
-    return 'Medium';
   }
 }
