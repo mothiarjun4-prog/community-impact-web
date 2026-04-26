@@ -1,6 +1,11 @@
-import { Injectable } from '@angular/core';
+import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { AssignmentHistory } from '../../models/incident.model';
+import { 
+  collection, doc, updateDoc, onSnapshot, 
+  Unsubscribe, QuerySnapshot, DocumentData 
+} from 'firebase/firestore';
+import { getFirestoreDb } from '../firebase.config';
 
 export interface VolunteerProfile {
   id: string;
@@ -15,25 +20,31 @@ export interface VolunteerProfile {
 }
 
 @Injectable({ providedIn: 'root' })
-export class VolunteerService {
+export class VolunteerService implements OnDestroy {
   private volunteersSubject = new BehaviorSubject<VolunteerProfile[]>([]);
+  private unsub?: Unsubscribe;
+
+  private get db() { return getFirestoreDb(); }
 
   constructor() {
-    this.loadFromStorage();
+    this._listen();
   }
 
-  private loadFromStorage(): void {
-    try {
-      const stored = localStorage.getItem('ci_volunteers');
-      const volunteers: VolunteerProfile[] = stored ? JSON.parse(stored) : [];
-      this.volunteersSubject.next(volunteers);
-    } catch {
-      this.volunteersSubject.next([]);
-    }
+  private _listen(): void {
+    const colRef = collection(this.db, 'volunteers');
+    this.unsub = onSnapshot(
+      colRef,
+      (snap: QuerySnapshot<DocumentData>) => {
+        const list: VolunteerProfile[] = [];
+        snap.forEach(d => list.push(d.data() as VolunteerProfile));
+        this.volunteersSubject.next(list);
+      },
+      (err: Error) => console.error('Volunteer listener error:', err)
+    );
   }
 
-  private saveToStorage(volunteers: VolunteerProfile[]): void {
-    localStorage.setItem('ci_volunteers', JSON.stringify(volunteers));
+  ngOnDestroy(): void {
+    this.unsub?.();
   }
 
   getVolunteers(): Observable<VolunteerProfile[]> {
@@ -44,37 +55,20 @@ export class VolunteerService {
     return this.volunteersSubject.value;
   }
 
+  // Called by AuthService.register — Firestore record is already created there.
+  // We keep this for compatibility, but the real-time listener will pick up the new volunteer.
   registerVolunteer(email: string, displayName: string): void {
-    const current = this.volunteersSubject.value;
-    // Avoid duplicates
-    if (current.find(v => v.email === email)) return;
-
-    const newVol: VolunteerProfile = {
-      id: 'vol-' + Date.now(),
-      displayName,
-      email,
-      registeredAt: new Date().toISOString(),
-      status: 'available'
-    };
-    const updated = [...current, newVol];
-    this.volunteersSubject.next(updated);
-    this.saveToStorage(updated);
+    console.log(`Volunteer registered: ${email}`);
   }
 
-  updateVolunteerStatus(id: string, status: 'available' | 'assigned' | 'offline'): void {
-    const updated = this.volunteersSubject.value.map(v =>
-      v.id === id ? { ...v, status } : v
-    );
-    this.volunteersSubject.next(updated);
-    this.saveToStorage(updated);
+  async updateVolunteerStatus(id: string, status: 'available' | 'assigned' | 'offline'): Promise<void> {
+    const vol = this.getVolunteerById(id);
+    if (!vol) return;
+    await updateDoc(doc(this.db, 'volunteers', vol.email), { status });
   }
 
-  updateVolunteerProfile(email: string, updates: Partial<VolunteerProfile>): void {
-    const updated = this.volunteersSubject.value.map(v =>
-      v.email === email ? { ...v, ...updates } : v
-    );
-    this.volunteersSubject.next(updated);
-    this.saveToStorage(updated);
+  async updateVolunteerProfile(email: string, updates: Partial<VolunteerProfile>): Promise<void> {
+    await updateDoc(doc(this.db, 'volunteers', email), updates as any);
   }
 
   getVolunteerByEmail(email: string): VolunteerProfile | undefined {
@@ -85,15 +79,17 @@ export class VolunteerService {
     return this.volunteersSubject.value.find(v => v.id === id);
   }
 
-  addMissionToHistory(volunteerId: string, entry: AssignmentHistory): void {
-    const updated = this.volunteersSubject.value.map(v => {
-      if (v.id === volunteerId) {
-        const history = v.missionHistory || [];
-        return { ...v, missionHistory: [...history, entry], status: 'assigned' as const };
-      }
-      return v;
+  async addMissionToHistory(volunteerId: string, entry: AssignmentHistory): Promise<void> {
+    const vol = this.getVolunteerById(volunteerId);
+    if (!vol) return;
+
+    const history = vol.missionHistory || [];
+    // Ensure history is an array before spreading
+    const updatedHistory = Array.isArray(history) ? [...history, entry] : [entry];
+
+    await updateDoc(doc(this.db, 'volunteers', vol.email), {
+      missionHistory: updatedHistory,
+      status: 'assigned'
     });
-    this.volunteersSubject.next(updated);
-    this.saveToStorage(updated);
   }
 }

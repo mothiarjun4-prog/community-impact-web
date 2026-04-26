@@ -52,23 +52,24 @@ import { NavbarComponent } from './shared/components/navbar/navbar.component';
 import { SidebarComponent } from './shared/components/sidebar/sidebar.component';
 import { ReportIncidentComponent } from './shared/components/report-incident/report-incident.component';
 import { RatingDialogComponent } from './shared/components/rating-dialog/rating-dialog.component'; // ✅ FIX 4
+import { AuthGuard } from './core/guards/auth.guard';
 
 const routes: Routes = [
   { path: '', component: LandingComponent },
   { path: 'login', component: LoginComponent },
   { path: 'register', component: RegisterComponent },
-  { path: 'ngo/dashboard', component: NgoDashboardComponent },
-  { path: 'ngo/volunteers', component: NgoVolunteersComponent },
-  { path: 'ngo/incidents', component: NgoIncidentsComponent },
-  { path: 'ngo/map', component: NgoMapComponent },
-  { path: 'ngo/reports', component: NgoReportsComponent },
-  { path: 'volunteer/dashboard', component: VolunteerDashboardComponent },
-  { path: 'volunteer/missions', component: VolunteerMissionsComponent },
-  { path: 'volunteer/report', component: VolunteerReportComponent },
-  { path: 'victim/dashboard', component: VictimDashboardComponent },
-  { path: 'victim/reports', component: VictimReportsComponent },
-  { path: 'victim/emergency', component: VictimEmergencyComponent },
-  { path: 'profile', component: ProfileComponent },
+  { path: 'ngo/dashboard', component: NgoDashboardComponent, canActivate: [AuthGuard], data: { role: 'ngo' } },
+  { path: 'ngo/volunteers', component: NgoVolunteersComponent, canActivate: [AuthGuard], data: { role: 'ngo' } },
+  { path: 'ngo/incidents', component: NgoIncidentsComponent, canActivate: [AuthGuard], data: { role: 'ngo' } },
+  { path: 'ngo/map', component: NgoMapComponent, canActivate: [AuthGuard], data: { role: 'ngo' } },
+  { path: 'ngo/reports', component: NgoReportsComponent, canActivate: [AuthGuard], data: { role: 'ngo' } },
+  { path: 'volunteer/dashboard', component: VolunteerDashboardComponent, canActivate: [AuthGuard], data: { role: 'volunteer' } },
+  { path: 'volunteer/missions', component: VolunteerMissionsComponent, canActivate: [AuthGuard], data: { role: 'volunteer' } },
+  { path: 'volunteer/report', component: VolunteerReportComponent, canActivate: [AuthGuard], data: { role: 'volunteer' } },
+  { path: 'victim/dashboard', component: VictimDashboardComponent, canActivate: [AuthGuard], data: { role: 'victim' } },
+  { path: 'victim/reports', component: VictimReportsComponent, canActivate: [AuthGuard], data: { role: 'victim' } },
+  { path: 'victim/emergency', component: VictimEmergencyComponent, canActivate: [AuthGuard], data: { role: 'victim' } },
+  { path: 'profile', component: ProfileComponent, canActivate: [AuthGuard] },
   { path: '**', redirectTo: '' }
 ];
 
