@@ -7,40 +7,16 @@
       <div class="page-heading">
         <div>
           <h1 class="page-title">My <span>Reports</span></h1>
-          <p class="page-subtitle">Track your submitted emergency reports and rate volunteer service.</p>
+          <p class="page-subtitle">Track all your submitted emergency reports.</p>
         </div>
         <span class="badge-count">{{ myReports.length }} Total</span>
       </div>
 
-      <!-- ── NOTIFICATION ALERTS PANEL ─────────────────── -->
-      <div class="notif-panel" *ngIf="notifications.length > 0">
-        <div class="notif-panel-header">
-          <mat-icon>notifications_active</mat-icon>
-          <h3>Alerts &amp; Updates</h3>
-          <button mat-button class="mark-all-btn" (click)="markAllRead()" *ngIf="(notifService.getUnreadCount()) > 0">
-            Mark all read
-          </button>
-        </div>
-        <div class="notif-list">
-          <div class="notif-item" *ngFor="let n of notifications"
-               [class.unread]="!n.read"
-               (click)="markNotifRead(n)">
-            <div class="notif-icon" [style.background]="getNotifColor(n.type) + '20'">
-              <mat-icon [style.color]="getNotifColor(n.type)">{{ getNotifIcon(n.type) }}</mat-icon>
-            </div>
-            <div class="notif-body">
-              <p class="notif-title">{{ n.title }}</p>
-              <p class="notif-msg">{{ n.message }}</p>
-              <span class="notif-time">{{ n.createdAt | date:'short' }}</span>
-            </div>
-            <div class="unread-dot" *ngIf="!n.read"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── REPORTS LIST ────────────────────────────────── -->
       <div class="reports-list" *ngIf="myReports.length > 0; else noReports">
-        <div class="report-card" *ngFor="let report of myReports">
+        <div class="report-card" *ngFor="let report of myReports"
+          [class.deleting]="deletingId === report.id"
+          [class.confirm-mode]="confirmDeleteId === report.id">
+
           <div class="report-left">
             <div class="report-status-bar" [style.background]="getStatusColor(report.status)"></div>
             <div class="report-icon" [style.background]="getUrgencyBg(report.urgency)">
@@ -57,50 +33,22 @@
             <div class="report-meta">
               <span class="meta-chip"><mat-icon>category</mat-icon> {{ report.type }}</span>
               <span class="meta-chip"><mat-icon>schedule</mat-icon> {{ report.timestamp | date:'medium' }}</span>
-              <span class="meta-chip"><mat-icon>location_on</mat-icon> {{ report.latitude | number:'1.2-2' }}, {{ report.longitude | number:'1.2-2' }}</span>
               <span class="meta-chip" *ngIf="report.volunteerName">
                 <mat-icon>person</mat-icon> {{ report.volunteerName }}
               </span>
             </div>
 
-            <!-- Directions button (for assigned/completed) -->
-            <div class="report-actions" *ngIf="report.status === 'assigned' || report.status === 'completed'">
-              <a mat-stroked-button [href]="getDirectionsUrl(report)" target="_blank" class="directions-btn">
-                <mat-icon>directions</mat-icon> Get Directions to Incident
-              </a>
-            </div>
-
-            <!-- Rating panel (only for completed, unrated) -->
-            <div class="rating-section" *ngIf="report.status === 'completed'">
-              <ng-container *ngIf="!hasAlreadyRated(report)">
-                <button mat-stroked-button class="rate-btn" (click)="openRating(report.id!)">
-                  <mat-icon>star_border</mat-icon>
-                  {{ ratingPanelOpenId === report.id ? 'Cancel Rating' : 'Rate Volunteer Service' }}
-                </button>
-
-                <div class="rating-panel" *ngIf="ratingPanelOpenId === report.id">
-                  <p class="rating-prompt">How would you rate the help you received?</p>
-                  <div class="stars-row">
-                    <button class="star-btn" *ngFor="let s of [1,2,3,4,5]"
-                      (click)="setRating(s)"
-                      [class.active]="ratingValue >= s">
-                      <mat-icon>{{ ratingValue >= s ? 'star' : 'star_border' }}</mat-icon>
-                    </button>
-                  </div>
-                  <textarea class="rating-comment" placeholder="Leave a comment (optional)..."
-                    [(ngModel)]="ratingComment" rows="3"></textarea>
-                  <button mat-raised-button class="btn-primary submit-rating-btn"
-                    (click)="submitRating(report)"
-                    [disabled]="isSubmittingRating || !ratingValue">
-                    {{ isSubmittingRating ? 'Submitting...' : 'Submit Rating' }}
-                  </button>
-                </div>
-              </ng-container>
-
-              <!-- Already rated -->
-              <div class="already-rated" *ngIf="hasAlreadyRated(report)">
+            <!-- ✅ FIX 4: Rate volunteer button — only for completed, unrated reports -->
+            <div class="rate-row" *ngIf="report.status === 'completed'">
+              <button mat-raised-button class="rate-btn"
+                *ngIf="!hasRated(report)"
+                (click)="openRatingDialog(report)">
+                <mat-icon>star_rate</mat-icon>
+                Rate Volunteer
+              </button>
+              <div class="already-rated" *ngIf="hasRated(report)">
                 <mat-icon>star</mat-icon>
-                <span>You rated this {{ getExistingRating(report) }}/5 — Thank you!</span>
+                <span>Rated {{ report.reviews![0].rating }}/5 — Thank you!</span>
               </div>
             </div>
           </div>
@@ -111,6 +59,29 @@
               [style.color]="getStatusColor(report.status)">
               <mat-icon>{{ getStatusIcon(report.status) }}</mat-icon>
               {{ getStatusLabel(report.status) }}
+            </div>
+
+            <!-- Delete — only for completed -->
+            <div class="delete-zone" *ngIf="report.status === 'completed'">
+              <button mat-icon-button class="delete-btn"
+                *ngIf="confirmDeleteId !== report.id"
+                (click)="requestDelete(report.id!)"
+                matTooltip="Delete this resolved report"
+                [disabled]="deletingId === report.id">
+                <mat-icon>delete_outline</mat-icon>
+              </button>
+              <div class="delete-confirm" *ngIf="confirmDeleteId === report.id">
+                <span class="confirm-label">Delete?</span>
+                <button mat-icon-button class="confirm-yes-btn"
+                  (click)="confirmDelete(report.id!)"
+                  [disabled]="deletingId === report.id">
+                  <mat-spinner *ngIf="deletingId === report.id" diameter="16"></mat-spinner>
+                  <mat-icon *ngIf="deletingId !== report.id">check</mat-icon>
+                </button>
+                <button mat-icon-button class="confirm-no-btn" (click)="cancelDelete()">
+                  <mat-icon>close</mat-icon>
+                </button>
+              </div>
             </div>
           </div>
         </div>

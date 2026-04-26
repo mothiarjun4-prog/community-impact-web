@@ -2,8 +2,8 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Router, NavigationEnd } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { NotificationService, AppNotification } from '../../../core/services/notification.service';
-import { filter } from 'rxjs/operators';
 import { Subscription } from 'rxjs';
+import { filter } from 'rxjs/operators';
 
 @Component({
   selector: 'app-navbar',
@@ -12,73 +12,72 @@ import { Subscription } from 'rxjs';
 })
 export class NavbarComponent implements OnInit, OnDestroy {
   userName: string = 'User';
+  // ✅ FIX 1: role label now reads from localStorage via authService — not from URL
+  // This means /profile, /victim/reports, etc. all show the correct role
   roleLabel: string = 'User';
+  showNotifPanel = false;
   notifications: AppNotification[] = [];
-  notifCount: number = 0;
-  private notifSub?: Subscription;
+  private subs: Subscription[] = [];
+  isDarkMode = false;
+
+  get notifCount(): number {
+    return this.notifications.filter(n => !n.read).length;
+  }
 
   constructor(
     private router: Router,
     private authService: AuthService,
-    public notifService: NotificationService
+    private notifService: NotificationService
   ) {}
 
   ngOnInit() {
-    this._applyUserInfo();
-    this.router.events.pipe(filter(e => e instanceof NavigationEnd))
-      .subscribe(() => this._applyUserInfo());
-
-    // Subscribe to live notifications
-    this.notifSub = this.notifService.getNotifications().subscribe(notifs => {
-      this.notifications = notifs.slice(0, 5); // Show latest 5 in dropdown
-      this.notifCount = notifs.filter(n => !n.read).length;
-    });
-  }
-
-  private _applyUserInfo(): void {
-    const user = this.authService.getCurrentUser();
+    // ✅ Read role from localStorage (set at login/register) — never from URL
     const role = this.authService.getUserRole();
-    if (user?.displayName) this.userName = user.displayName;
-    if (role === 'ngo') this.roleLabel = 'NGO Admin';
-    else if (role === 'volunteer') this.roleLabel = 'Volunteer';
-    else if (role === 'victim') this.roleLabel = 'Victim / User';
-    else this.roleLabel = 'User';
+    this.roleLabel = role === 'ngo' ? 'NGO Admin'
+                   : role === 'volunteer' ? 'Volunteer'
+                   : 'Victim / User';
 
-    // Start notification listener for the logged-in user
-    if (user?.email) {
-      this.notifService.listenForUser(user.email);
+    const user = this.authService.getCurrentUser();
+    if (user?.displayName) this.userName = user.displayName;
+
+    // Keep roleLabel fresh if user navigates between role areas
+    this.subs.push(
+      this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => {
+        const r = this.authService.getUserRole();
+        this.roleLabel = r === 'ngo' ? 'NGO Admin'
+                       : r === 'volunteer' ? 'Volunteer'
+                       : 'Victim / User';
+      })
+    );
+
+    // Load real-time notifications for this user
+    const userId = this.authService.getUserId();
+    if (userId && userId !== 'anonymous') {
+      this.subs.push(
+        this.notifService.getNotifications(userId).subscribe(notifs => {
+          this.notifications = notifs;
+        })
+      );
     }
   }
 
-  markAllRead(): void {
-    const user = this.authService.getCurrentUser();
-    if (user?.email) this.notifService.markAllRead(user.email);
+  ngOnDestroy() { this.subs.forEach(s => s.unsubscribe()); }
+
+  markAllRead() {
+    const userId = this.authService.getUserId();
+    this.notifService.markAllRead(userId);
+    this.showNotifPanel = false;
   }
 
-  getNotifIcon(type: string): string {
-    if (type === 'volunteer_assigned') return 'directions_run';
-    if (type === 'incident_completed') return 'check_circle';
-    return 'notifications';
-  }
-
-  getNotifColor(type: string): string {
-    if (type === 'volunteer_assigned') return '#f57c00';
-    if (type === 'incident_completed') return '#388e3c';
-    return '#1976d2';
-  }
+  toggleNotifPanel() { this.showNotifPanel = !this.showNotifPanel; }
 
   onLogout() {
     this.authService.logout();
     this.router.navigate(['/']);
   }
 
-  isDarkMode: boolean = false;
   toggleDarkMode() {
     this.isDarkMode = !this.isDarkMode;
     document.body.classList.toggle('dark-theme', this.isDarkMode);
-  }
-
-  ngOnDestroy(): void {
-    this.notifSub?.unsubscribe();
   }
 }

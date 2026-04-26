@@ -1,7 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { IncidentService } from '../../../core/services/incident.service';
 import { AuthService } from '../../../core/services/auth.service';
-import { NotificationService } from '../../../core/services/notification.service';
 import { Incident } from '../../../models/incident.model';
 
 @Component({
@@ -10,14 +9,14 @@ import { Incident } from '../../../models/incident.model';
   styleUrls: ['./victim-dashboard.component.scss']
 })
 export class VictimDashboardComponent implements OnInit {
+  // ✅ Fixed: subscribe reactively to victim's own reports
   myReports: Incident[] = [];
   currentLocation: google.maps.LatLngLiteral = { lat: 11.0168, lng: 76.9558 };
   zoom = 12;
 
   constructor(
     private incidentService: IncidentService,
-    private authService: AuthService,
-    private notifService: NotificationService
+    private authService: AuthService
   ) {}
 
   ngOnInit() {
@@ -28,16 +27,11 @@ export class VictimDashboardComponent implements OnInit {
       });
     }
 
+    // ✅ Filter by logged-in user's email (same id used in submitReport)
     const victimId = this.authService.getUserId();
     this.incidentService.getIncidentsByVictim(victimId).subscribe(incidents => {
       this.myReports = incidents;
     });
-
-    // Start notification listener so the navbar badge updates immediately
-    const user = this.authService.getCurrentUser();
-    if (user?.email) {
-      this.notifService.listenForUser(user.email);
-    }
   }
 
   getStatusColor(status: string): string {
