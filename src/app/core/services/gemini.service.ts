@@ -1,9 +1,9 @@
 import { Injectable } from '@angular/core';
 import { Incident } from '../../models/incident.model';
 
-// Replace with your actual Gemini API key from environment
-const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+import { environment } from '../../../environments/environment';
+
+const getGeminiUrl = () => `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${environment.geminiApiKey}`;
 
 @Injectable({ providedIn: 'root' })
 export class GeminiService {
@@ -32,7 +32,7 @@ Incident description: ${description}
       });
     }
 
-    const response = await fetch(GEMINI_URL, {
+    const response = await fetch(getGeminiUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -80,7 +80,7 @@ Respond ONLY with the volunteerId string of the best match. No explanation.
 `;
 
     try {
-      const response = await fetch(GEMINI_URL, {
+      const response = await fetch(getGeminiUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
