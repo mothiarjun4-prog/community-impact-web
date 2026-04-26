@@ -103,9 +103,20 @@ export class NotificationService {
     });
   }
 
-
-
-
+  // ── Convenience: notify volunteer that they are assigned to a mission ──
+  async notifyVolunteerNewMission(
+    volunteerId: string,
+    incidentTitle: string,
+    locationName: string,
+    incidentId: string
+  ): Promise<void> {
+    await this.notify(volunteerId, {
+      type: 'assigned',
+      title: '🚨 New Mission Assigned',
+      message: `You have been assigned to: "${incidentTitle}". Location: ${locationName}. Please check your dashboard for details and directions.`,
+      incidentId,
+    });
+  }
 
   // ── Convenience: notify victim that incident is resolved ──
   async notifyIncidentResolved(

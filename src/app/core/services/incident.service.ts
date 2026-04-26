@@ -96,6 +96,7 @@ export class IncidentService implements OnDestroy {
     if (incident.victimId && incident.victimId !== 'anonymous') {
       await this.notifService.notifyVolunteerAssigned(incident.victimId, incident.title, volunteerName, incidentId);
     }
+    await this.notifService.notifyVolunteerNewMission(volunteerId, incident.title, incident.locationName || 'Unknown Location', incidentId);
   }
 
   async markCompleted(incidentId: string): Promise<void> {

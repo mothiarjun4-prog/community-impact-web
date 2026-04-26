@@ -136,7 +136,7 @@ export class AuthService {
     return email ? { email, displayName: name || email.split('@')[0] } : null;
   }
 
-  getUserId(): string { return localStorage.getItem('userEmail') || 'anonymous'; }
+  getUserId(): string { return localStorage.getItem('userId') || 'anonymous'; }
   getUserRole(): string { return localStorage.getItem('userRole') || ''; }
   isLoggedIn(): boolean { return !!localStorage.getItem('userEmail'); }
 
