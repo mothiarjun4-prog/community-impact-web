@@ -6,9 +6,13 @@ import { Injectable } from '@angular/core';
 import { Incident } from '../../models/incident.model';
 import { environment } from '../../../environments/environment';
 
-const MODEL = 'gemini-1.5-flash-latest';
-const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-const getUrl = () => `${BASE_URL}/${MODEL}:generateContent?key=${environment.geminiApiKey}`;
+const MODEL = 'gemini-3-flash';
+const BASE_URL = 'https://generativelanguage.googleapis.com/v1/models';
+const getUrl = () => {
+  const env = (window as any).__env || {};
+  const key = env['GEMINI_API_KEY'] || environment.geminiApiKey;
+  return `${BASE_URL}/${MODEL}:generateContent?key=${key}`;
+};
 
 const SAFETY = [
   { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
@@ -77,27 +81,42 @@ Report: "${description}"`;
     parts.push({ text: prompt });
 
     try {
+      console.log('[Gemini] Analyzing report:', { description, hasImage: !!imageBase64 });
       const res = await fetch(getUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ role: 'user', parts }],
           safetySettings: SAFETY,
-          generationConfig: { temperature: 0.1, topP: 0.8, maxOutputTokens: 512 }
+          generationConfig: { temperature: 0.1, topP: 0.8, maxOutputTokens: 1024 }
         })
       });
 
       if (!res.ok) {
-        console.error('[Gemini] HTTP', res.status, await res.text());
-        throw new Error(`Gemini ${res.status}`);
+        const errText = await res.text();
+        console.error('[Gemini] HTTP Error:', res.status, errText);
+        throw new Error(`Gemini API error ${res.status}: ${errText}`);
       }
 
       const data = await res.json();
-      if (data?.promptFeedback?.blockReason) throw new Error('Content blocked');
+      if (data?.promptFeedback?.blockReason) throw new Error(`Content blocked: ${data.promptFeedback.blockReason}`);
 
       const raw: string = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      console.log('[Gemini] Raw response:', raw);
+      
       const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-      const parsed = JSON.parse(cleaned);
+      let parsed;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch (e) {
+        console.error('[Gemini] JSON Parse failed, attempting to extract JSON from text');
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('No valid JSON found in response');
+        }
+      }
 
       // Validate severity
       if (!['Critical', 'High', 'Medium', 'Low'].includes(parsed.severity)) {
@@ -125,30 +144,41 @@ Report: "${description}"`;
 Respond with ONLY the extracted text or scene description — no labels, no preamble.` }
     ];
 
-    const res = await fetch(getUrl(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts }],
-        safetySettings: SAFETY,
-        generationConfig: { temperature: 0.0, maxOutputTokens: 400 }
-      })
-    });
+    try {
+      console.log('[Gemini OCR] Extracting text from image...');
+      const res = await fetch(getUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts }],
+          safetySettings: SAFETY,
+          generationConfig: { temperature: 0.0, maxOutputTokens: 1024 }
+        })
+      });
 
-    if (!res.ok) {
-      const body = await res.text();
-      console.error('[Gemini OCR] HTTP', res.status, body);
-      throw new Error(`OCR API error ${res.status}: ${body}`);
+      if (!res.ok) {
+        const body = await res.text();
+        console.error('[Gemini OCR] HTTP Error:', res.status, body);
+        throw new Error(`OCR API error ${res.status}: ${body}`);
+      }
+
+      const data = await res.json();
+      if (data?.promptFeedback?.blockReason) {
+        throw new Error(`OCR blocked: ${data.promptFeedback.blockReason}`);
+      }
+
+      const rawText: string = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      console.log('[Gemini OCR] Raw text:', rawText);
+
+      // Clean markdown if present
+      const cleanedText = rawText.replace(/^```(?:markdown|text)?\s*/i, '').replace(/```\s*$/i, '').trim();
+      
+      if (!cleanedText) throw new Error('Empty OCR response');
+      return cleanedText;
+    } catch (err) {
+      console.error('[Gemini OCR] extraction failed:', err);
+      throw err;
     }
-
-    const data = await res.json();
-    if (data?.promptFeedback?.blockReason) {
-      throw new Error(`OCR blocked: ${data.promptFeedback.blockReason}`);
-    }
-
-    const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!text.trim()) throw new Error('Empty OCR response');
-    return text.trim();
   }
 
   // ── Volunteer matching ─────────────────────────────────────────────────────
