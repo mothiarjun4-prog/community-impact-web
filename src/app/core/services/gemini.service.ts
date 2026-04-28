@@ -6,11 +6,13 @@ import { Injectable } from '@angular/core';
 import { Incident } from '../../models/incident.model';
 import { environment } from '../../../environments/environment';
 
-const MODEL = 'gemini-3-flash';
-const BASE_URL = 'https://generativelanguage.googleapis.com/v1/models';
+const MODEL = 'gemini-1.5-flash';
+const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const getUrl = () => {
   const env = (window as any).__env || {};
   const key = env['GEMINI_API_KEY'] || environment.geminiApiKey;
+  const maskedKey = key ? `${key.substring(0, 6)}...${key.substring(key.length - 4)}` : 'MISSING';
+  console.log(`[Gemini] Using key: ${maskedKey} for model: ${MODEL}`);
   return `${BASE_URL}/${MODEL}:generateContent?key=${key}`;
 };
 
@@ -139,9 +141,10 @@ Report: "${description}"`;
       { inline_data: { mime_type: mimeType, data: imageBase64 } },
       {
         text: `You are an OCR assistant for an emergency response app.
-1. If the image contains visible text, extract it exactly as written.
-2. If the image shows an emergency scene (accident, flood, fire, etc.), describe what you see in 2-3 clear sentences: what type of emergency, location if visible, number of people affected, severity.
-Respond with ONLY the extracted text or scene description — no labels, no preamble.` }
+1. If the image contains visible text (like street signs, documents, or labels), extract it exactly as written.
+2. If the image shows an emergency scene (accident, flood, fire, etc.), describe the situation clearly: what type of emergency, number of people involved, and visible hazards.
+3. If there is both text and a scene, provide both.
+Respond ONLY with the extracted text or description — no labels, no preamble, no markdown formatting.` }
     ];
 
     try {
